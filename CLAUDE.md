@@ -36,7 +36,7 @@ The build system is make-based and highly modular, using:
 - `toolchain/` - Cross-compilation toolchain (gcc, binutils, libc)
 - `tools/` - Host utilities needed during build
 - `rules.mk` - Core build system variables and functions
-- `feeds.conf.default` - Default external package feed sources
+- `feeds.conf.default` - Default external package feed sources (can be overridden by `feeds.conf`)
 
 ### Build Flow
 
@@ -120,7 +120,9 @@ make menuconfig
 
 ### Building
 ```bash
-# Full build (multi-core)
+# Full build (single-core or multi-core)
+make
+# Or with parallel jobs for faster builds
 make -j$(nproc)
 
 # Build with verbose output
@@ -291,8 +293,8 @@ Subsystems: target names (e.g., `ath79`, `ipq40xx`), package names, `kernel`, `b
 - `/host` suffix = host tool dependency
 
 ### Feeds System
-- External repos defined in `feeds.conf.default`
-- After modifying feeds.conf: `./scripts/feeds update -a && ./scripts/feeds install -a`
+- External repos defined in `feeds.conf.default` (or custom `feeds.conf`)
+- After modifying feeds configuration: `./scripts/feeds update -a && ./scripts/feeds install -a`
 - Feed packages appear in `package/feeds/<feedname>/`
 
 ## References

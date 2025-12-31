@@ -4,10 +4,10 @@
 The top-level `Makefile` orchestrates the full toolchain build, while `target/` holds SoC-specific kernels, DTS files, and image recipes. Place new packages under `package/`, keeping helper scripts in `scripts/` and reusable build helpers in `include/`. Host-side utilities reside in `tools/` and `toolchain/`, and device configuration defaults belong in `config/` and the relevant `Config.in` fragment. Images and SDK artifacts are emitted to `bin/targets/<target>/<subtarget>/`.
 
 ## Build, Test, and Development Commands
-- `./scripts/feeds update -a` – sync every feed listed in `feeds.conf.default`.
+- `./scripts/feeds update -a` – sync every feed listed in `feeds.conf` / `feeds.conf.default`.
 - `./scripts/feeds install -a` – stage feed packages into `package/feeds/`.
 - `make menuconfig` – configure targets, toolchain options, and package sets via ncurses UI.
-- `make -j$(nproc)` – perform the full toolchain, kernel, and rootfs build; artifacts land in `bin/`.
+- `make` or `make -j$(nproc)` – perform the full toolchain, kernel, and rootfs build; artifacts land in `bin/`.
 - `make package/<pkgname>/{clean,compile} V=sc` – rebuild a single package with verbose logs for quicker iteration.
 
 ## Coding Style & Naming Conventions
