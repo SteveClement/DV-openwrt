@@ -12,10 +12,11 @@ PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL=$(PROJECT_GIT)/project/odhcp6c.git
-PKG_SOURCE_DATE:=2025-11-09
-PKG_SOURCE_VERSION:=e5690c1f13ed3605ece68d870abb3c4a2f09d571
-PKG_MIRROR_HASH:=4dbf3980f8ac72f92f68c5dbac7179c28aab0e012a53162e0defbbf5959a9389
-PKG_MAINTAINER:=Hans Dedecker <dedeckeh@gmail.com>
+PKG_SOURCE_DATE:=2025-12-29
+PKG_SOURCE_VERSION:=8abb45065f5ef9d176efa6bd151a1209b05852c4
+PKG_MIRROR_HASH:=e7ce2b3025dfc005b9fb960f53c1848c1864e026e11e336f7b017d6eb9c68cef
+
+PKG_MAINTAINER:=Álvaro Fernández Rojas <noltari@gmail.com>
 PKG_LICENSE:=GPL-2.0
 
 include $(INCLUDE_DIR)/package.mk
@@ -23,22 +24,11 @@ include $(INCLUDE_DIR)/cmake.mk
 
 CMAKE_OPTIONS += -DUBUS=1
 
-ifneq ($(CONFIG_PACKAGE_odhcp6c_ext_cer_id),0)
-  CMAKE_OPTIONS += -DEXT_CER_ID=$(CONFIG_PACKAGE_odhcp6c_ext_cer_id)
-endif
-
 define Package/odhcp6c
   SECTION:=net
   CATEGORY:=Network
   TITLE:=Embedded DHCPv6-client for OpenWrt
   DEPENDS:=@IPV6 +libubox +libubus
-endef
-
-define Package/odhcp6c/config
-  config PACKAGE_odhcp6c_ext_cer_id
-    int "CER-ID Extension ID (0 = disabled)"
-    depends on PACKAGE_odhcp6c
-    default 0
 endef
 
 define Package/odhcp6c/conffiles

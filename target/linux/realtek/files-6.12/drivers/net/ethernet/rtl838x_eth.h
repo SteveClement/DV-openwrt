@@ -5,6 +5,18 @@
 
 /* Register definition */
 
+/*
+ * Reset
+ */
+#define RTL838X_RST_GLB_CTRL_0			(0x003c)
+#define RTL839X_RST_GLB_CTRL			(0x0014)
+#define RTL930X_RST_GLB_CTRL_0			(0x000c)
+#define RTL931X_RST_GLB_CTRL			(0x0400)
+
+/* Switch interrupts */
+#define RTL839X_IMR_PORT_LINK_STS_CHG		(0x0068)
+#define RTL839X_ISR_PORT_LINK_STS_CHG		(0x00a0)
+
 /* Per port MAC control */
 #define RTL838X_MAC_PORT_CTRL			(0xd560)
 #define RTL839X_MAC_PORT_CTRL			(0x8004)
@@ -151,12 +163,12 @@
 #define RTL930X_L2_PORT_DABLK_CTRL		(0x9060)
 
 /* MAC link state bits */
-#define FORCE_EN				(1 << 0)
-#define FORCE_LINK_EN				(1 << 1)
-#define NWAY_EN					(1 << 2)
-#define DUPLX_MODE				(1 << 3)
-#define TX_PAUSE_EN				(1 << 6)
-#define RX_PAUSE_EN				(1 << 7)
+#define FORCE_EN				BIT(0)
+#define FORCE_LINK_EN				BIT(1)
+#define NWAY_EN					BIT(2)
+#define DUPLX_MODE				BIT(3)
+#define TX_PAUSE_EN				BIT(6)
+#define RX_PAUSE_EN				BIT(7)
 
 /* L2 Notification DMA interface */
 #define RTL839X_DMA_IF_NBUF_BASE_DESC_ADDR_CTRL	(0x785C)
@@ -374,7 +386,6 @@ inline u32 rtl839x_get_mac_link_spd_sts(int port)
 	return (speed & 0x3);
 }
 
-
 inline u32 rtl930x_get_mac_link_spd_sts(int port)
 {
 	int r = RTL930X_MAC_LINK_SPD_STS + ((port >> 3) << 2);
@@ -437,6 +448,7 @@ struct p_hdr;
 struct dsa_tag;
 
 struct rtl838x_eth_reg {
+	int family_id;
 	irqreturn_t (*net_irq)(int irq, void *dev_id);
 	int (*mac_port_ctrl)(int port);
 	int dma_if_intr_sts;

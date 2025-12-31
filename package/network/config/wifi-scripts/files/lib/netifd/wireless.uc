@@ -135,6 +135,7 @@ function config_init(uci)
 		radios = filter(radios, (v) => v != null);
 		let radio_config = map(dev_names, (v) => devices[v].config);
 		let ifname;
+		let mlo_created = false;
 
 		for (let dev_name in dev_names) {
 			let dev = devices[dev_name];
@@ -148,9 +149,11 @@ function config_init(uci)
 			let config = parse_attribute_list(data, handler.iface);
 			config.radios = radios;
 
-			if (mlo_vif && dev_name == dev_names[0]) {
+			if (mlo_vif && !mlo_created) {
 				let mlo_config = { ...config };
 
+				if (config.wds)
+					mlo_config['4addr'] = config.wds;
 				mlo_config.radio_config = radio_config;
 				ifname = config.ifname;
 				if (!ifname) {
@@ -160,6 +163,7 @@ function config_init(uci)
 				}
 
 				mlo_vifs[ifname] = mlo_config;
+				mlo_created = true;
 			}
 
 			if (ifname)
@@ -188,8 +192,9 @@ function config_init(uci)
 	}
 
 	for (let name, data in sections.vlan) {
+		let ifaces = parse_array(data.iface);
 		for (let iface, iface_vifs in vifs) {
-			if (data.iface && data.iface != iface)
+			if (length(ifaces) && index(ifaces, iface) < 0)
 				continue;
 
 			for (let vif in iface_vifs) {
@@ -210,22 +215,25 @@ function config_init(uci)
 	}
 
 	for (let name, data in sections.station) {
-		if (!data.iface || !vifs[data.iface])
-			continue;
-
-		for (let vif in vifs[data.iface]) {
-			let dev = devices[vif.device];
-			let handler = handlers[vif.device];
-			if (!dev || !handler)
+		let ifaces = parse_array(data.iface);
+		for (let iface, iface_vifs in vifs) {
+			if (length(ifaces) && index(ifaces, iface) < 0)
 				continue;
 
-			let config = parse_attribute_list(data, handler.station);
+			for (let vif in iface_vifs) {
+				let dev = devices[vif.device];
+				let handler = handlers[vif.device];
+				if (!dev || !handler)
+					continue;
 
-			let sta = {
-				name,
-				config
-			};
-			push(vif.sta, sta);
+				let config = parse_attribute_list(data, handler.station);
+
+				let sta = {
+					name,
+					config
+				};
+				push(vif.sta, sta);
+			}
 		}
 	}
 
