@@ -29,7 +29,7 @@ define Package/libnids
   CATEGORY:=Libraries
   TITLE:=Network intrusion detection library
   URL:=https://github.com/MITRECND/libnids
-  DEPENDS:=+libpcap
+  DEPENDS:=+libpcap +libnet
 endef
 
 define Package/libnids/description
@@ -38,8 +38,13 @@ endef
 
 CONFIGURE_ARGS += \
 	--with-libpcap=$(STAGING_DIR)/usr \
+	--with-libnet=$(STAGING_DIR)/usr \
+	--disable-libglib \
 	--enable-shared \
 	--disable-static
+
+MAKE_FLAGS += \
+	install_prefix="$(PKG_INSTALL_DIR)"
 
 define Package/libnids/install
 	$(INSTALL_DIR) $(1)/usr/lib
@@ -51,8 +56,10 @@ define Build/InstallDev
 	$(CP) $(PKG_INSTALL_DIR)/usr/include/nids.h $(1)/usr/include/
 	$(INSTALL_DIR) $(1)/usr/lib
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/libnids.{a,so*} $(1)/usr/lib/
-	$(INSTALL_DIR) $(1)/usr/lib/pkgconfig
-	$(CP) $(PKG_INSTALL_DIR)/usr/lib/pkgconfig/libnids.pc $(1)/usr/lib/pkgconfig/
+	if [ -f "$(PKG_INSTALL_DIR)/usr/lib/pkgconfig/libnids.pc" ]; then \
+		$(INSTALL_DIR) $(1)/usr/lib/pkgconfig; \
+		$(CP) $(PKG_INSTALL_DIR)/usr/lib/pkgconfig/libnids.pc $(1)/usr/lib/pkgconfig/; \
+	fi
 endef
 
 $(eval $(call BuildPackage,libnids))

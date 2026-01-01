@@ -46,6 +46,8 @@ endef
 define Build/InstallDev
 	$(INSTALL_DIR) $(1)/usr/include
 	$(CP) $(PKG_INSTALL_DIR)/usr/include/libnet.h $(1)/usr/include/
+	$(INSTALL_DIR) $(1)/usr/include/libnet
+	$(CP) $(PKG_INSTALL_DIR)/usr/include/libnet/* $(1)/usr/include/libnet/
 	$(INSTALL_DIR) $(1)/usr/lib
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/libnet.so* $(1)/usr/lib/
 	$(INSTALL_DIR) $(1)/usr/lib/pkgconfig
