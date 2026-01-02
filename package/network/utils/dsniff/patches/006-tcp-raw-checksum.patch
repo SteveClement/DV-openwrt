@@ -1,0 +1,66 @@
+--- a/tcp_raw.c
++++ b/tcp_raw.c
+@@ -42,6 +42,46 @@
+ 
+ static struct tcp_conn	conntab[TCP_HASHSIZE];
+ 
++static u_int32_t
++tcp_raw_cksum_add(const u_char *buf, int len, u_int32_t sum)
++{
++	while (len > 1) {
++		sum += ((u_int16_t)buf[0] << 8) | buf[1];
++		buf += 2;
++		len -= 2;
++	}
++	if (len > 0)
++		sum += (u_int16_t)buf[0] << 8;
++	return (sum);
++}
++
++static u_short
++tcp_raw_cksum_finish(u_int32_t sum)
++{
++	while (sum >> 16)
++		sum = (sum & 0xffff) + (sum >> 16);
++	return ((u_short)~sum);
++}
++
++static u_short
++tcp_raw_tcp_checksum(const struct libnet_ipv4_hdr *ip,
++    const struct libnet_tcp_hdr *tcp, int len)
++{
++	u_char pseudo[12];
++	u_int32_t sum;
++
++	memcpy(pseudo, &ip->ip_src.s_addr, 4);
++	memcpy(pseudo + 4, &ip->ip_dst.s_addr, 4);
++	pseudo[8] = 0;
++	pseudo[9] = IPPROTO_TCP;
++	pseudo[10] = (len >> 8) & 0xff;
++	pseudo[11] = len & 0xff;
++
++	sum = tcp_raw_cksum_add(pseudo, sizeof(pseudo), 0);
++	sum = tcp_raw_cksum_add((const u_char *)tcp, len, sum);
++	return (tcp_raw_cksum_finish(sum));
++}
++
+ static int
+ tcp_seg_compare(const void *a, const void *b)
+ {
+@@ -129,10 +169,12 @@ tcp_raw_input(struct libnet_ipv4_hdr *ip, struct libnet_tcp_hdr *tcp, int len)
+ 	int tcp_hl = tcp->th_off * 4;
+ 
+ 	/* Verify TCP checksum. */
+ 	cksum = tcp->th_sum;
+-	libnet_do_checksum((u_char *) ip, IPPROTO_TCP, len);
+-
+-	if (cksum != tcp->th_sum)
++	tcp->th_sum = 0;
++	if (tcp_raw_tcp_checksum(ip, tcp, len) != cksum) {
++		tcp->th_sum = cksum;
+ 		return (NULL);
++	}
++	tcp->th_sum = cksum;
+ 
+ 	tha.src = ip->ip_src.s_addr;
+ 	tha.dst = ip->ip_dst.s_addr;

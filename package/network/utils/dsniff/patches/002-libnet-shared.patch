@@ -1,0 +1,75 @@
+--- a/configure.in
++++ b/configure.in
+@@ -209,7 +209,7 @@
+      ;;
+   *)
+      AC_MSG_RESULT($withval)
+-     if test -f $withval/include/libnet.h -a -f $withval/lib/libnet.a; then
++     if test -f $withval/include/libnet.h; then
+         owd=`pwd`
+         if cd $withval; then withval=`pwd`; cd $owd; fi
+ 	if test -f $withval/bin/libnet-config; then
+@@ -220,9 +220,43 @@
+ 	   CFLAGS="$CFLAGS `libnet-config --defines`"
+ 	fi
+ 	LNETINC="-I$withval/include"
+-	LNETLIB="-L$withval/lib -lnet"
++	has_libnet_lib_so=no
++	if ls $withval/lib/libnet.so.* >/dev/null 2>&1; then
++		has_libnet_lib_so=yes
++	fi
++	if test -f $withval/lib/libnet.a -o -f $withval/lib/libnet.so -o $has_libnet_lib_so = yes; then
++		LNETLIB="-L$withval/lib -lnet"
++	else
++		AC_MSG_ERROR([libnet not found in $withval])
++	fi
++     elif test -f $withval/include/libnet/libnet.h; then
++	owd=`pwd`
++	if cd $withval; then withval=`pwd`; cd $owd; fi
++	if test -f $withval/bin/libnet-config; then
++	   CFLAGS="$CFLAGS `$withval/bin/libnet-config --defines`"
++	elif test -f $withval/libnet-config; then
++	   CFLAGS="$CFLAGS `$withval/libnet-config --defines`"
++	else
++	   CFLAGS="$CFLAGS `libnet-config --defines`"
++	fi
++	LNETINC="-I$withval/include -I$withval/include/libnet"
++	has_libnet_lib_so=no
++	if ls $withval/lib/libnet.so.* >/dev/null 2>&1; then
++		has_libnet_lib_so=yes
++	fi
++	has_libnet_so=no
++	if ls $withval/libnet.so.* >/dev/null 2>&1; then
++		has_libnet_so=yes
++	fi
++	if test -f $withval/lib/libnet.a -o -f $withval/lib/libnet.so -o $has_libnet_lib_so = yes; then
++		LNETLIB="-L$withval/lib -lnet"
++	elif test -f $withval/libnet.a -o -f $withval/libnet.so -o $has_libnet_so = yes; then
++		LNETLIB="-L$withval -lnet"
++	else
++		AC_MSG_ERROR([libnet not found in $withval])
++	fi
+      else
+-        AC_ERROR(libnet.h or libnet.a not found in $withval)
++        AC_MSG_ERROR([libnet.h or libnet.a not found in $withval])
+      fi
+      ;;
+   esac ],
+@@ -230,9 +264,17 @@
+      CFLAGS="$CFLAGS `${prefix}/bin/libnet-config --defines`"
+      LNETINC="-I${prefix}/include"
+      LNETLIB="-L${prefix}/lib -lnet"
++  elif test -f ${prefix}/include/libnet/libnet.h; then
++     CFLAGS="$CFLAGS `${prefix}/bin/libnet-config --defines`"
++     LNETINC="-I${prefix}/include -I${prefix}/include/libnet"
++     LNETLIB="-L${prefix}/lib -lnet"
+   elif test -f /usr/include/libnet.h; then
+      CFLAGS="$CFLAGS `libnet-config --defines`"
+      LNETLIB="-lnet"
++  elif test -f /usr/include/libnet/libnet.h; then
++     CFLAGS="$CFLAGS `libnet-config --defines`"
++     LNETINC="-I/usr/include -I/usr/include/libnet"
++     LNETLIB="-lnet"
+   else
+      AC_MSG_RESULT(no)
+      AC_ERROR(libnet not found)

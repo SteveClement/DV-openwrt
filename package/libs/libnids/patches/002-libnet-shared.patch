@@ -1,0 +1,49 @@
+--- a/configure.in
++++ b/configure.in
+@@ -157,10 +157,25 @@
+      ;;
+   *)
+      AC_MSG_RESULT($withval)
+-     if test -f $withval/include/libnet.h -a -f $withval/lib/libnet.a -a -f $withval/libnet-config ; then
++     has_libnet_so=no
++     if ls $withval/lib/libnet.so.* >/dev/null 2>&1; then
++		has_libnet_so=yes
++     fi
++     has_libnet_config=no
++     if test -f $withval/libnet-config -o -f $withval/bin/libnet-config; then
++		has_libnet_config=yes
++     fi
++     if test -f $withval/include/libnet.h \
++		-a \( -f $withval/lib/libnet.a -o -f $withval/lib/libnet.so -o $has_libnet_so = yes \) \
++		-a $has_libnet_config = yes ; then
+         owd=`pwd`
+         if cd $withval; then withval=`pwd`; cd $owd; fi
+-	LNET_CFLAGS="-I$withval/include `$withval/libnet-config --defines`"
++	if test -f $withval/libnet-config; then
++		libnet_config="$withval/libnet-config"
++	else
++		libnet_config="$withval/bin/libnet-config"
++	fi
++	LNET_CFLAGS="-I$withval/include `$libnet_config --defines`"
+ 	LNETLIB="-L$withval/lib -lnet"
+      elif test -f $withval/include/libnet.h -a -f $withval/src/libnet.a; then
+         owd=`pwd`
+@@ -168,7 +183,7 @@
+ 	LNET_CFLAGS="-I$withval/include"
+ 	LNETLIB="-L$withval/src -lnet"
+      else
+-	echo "A working combination of libnet.h, libnet.a and libnet-config not found in $withval; get libnet from www.packetfactory.net/projects/libnet and reinstall"
++	echo "A working combination of libnet.h, libnet.a/libnet.so, and libnet-config not found in $withval; get libnet from www.packetfactory.net/projects/libnet and reinstall"
+         AC_ERROR(libnet)
+      fi
+      ;;
+@@ -176,7 +191,8 @@
+ [ if test "x"$LIBNET_VER = "x"-1 ; then
+ 	AC_MSG_RESULT(skipping libnet)
+   else
+-	if test -f ${prefix}/include/libnet.h -a ${exec_prefix}/lib/libnet.a ; then
++	if test -f ${prefix}/include/libnet.h \
++		-a \( -f ${exec_prefix}/lib/libnet.a -o -f ${exec_prefix}/lib/libnet.so -o -f ${exec_prefix}/lib/libnet.so.* \) ; then
+ 	     LNET_CFLAGS="-I${prefix}/include `${exec_prefix}/bin/libnet-config --defines 2>/dev/null`"
+ 	     LNETLIB="-L${exec_prefix}/lib -lnet"
+ 	else

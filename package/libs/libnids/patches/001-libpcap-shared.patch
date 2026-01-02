@@ -1,0 +1,34 @@
+--- a/configure.in
++++ b/configure.in
+@@ -66,12 +66,27 @@
+   *)
+      AC_MSG_RESULT($withval)
+-     if test -f $withval/pcap.h -a -f $withval/libpcap.a; then
++     if test -f $withval/pcap.h -o -f $withval/include/pcap.h -o -f $withval/include/pcap/pcap.h; then
+         owd=`pwd`
+         if cd $withval; then withval=`pwd`; cd $owd; fi
+-	PCAP_CFLAGS="-I$withval -I$withval/bpf"
+-	PCAPLIB="-L$withval -lpcap"
++	has_pcap_so=no
++	if ls $withval/libpcap.so.* >/dev/null 2>&1; then
++		has_pcap_so=yes
++	fi
++	has_pcap_lib_so=no
++	if ls $withval/lib/libpcap.so.* >/dev/null 2>&1; then
++		has_pcap_lib_so=yes
++	fi
++	if test -f $withval/libpcap.a -o -f $withval/libpcap.so -o $has_pcap_so = yes; then
++		PCAP_CFLAGS="-I$withval -I$withval/bpf"
++		PCAPLIB="-L$withval -lpcap"
++	elif test -f $withval/lib/libpcap.a -o -f $withval/lib/libpcap.so -o $has_pcap_lib_so = yes; then
++		PCAP_CFLAGS="-I$withval/include -I$withval/include/pcap"
++		PCAPLIB="-L$withval/lib -lpcap"
++	else
++		AC_ERROR(libpcap not found in $withval)
++	fi
+      else
+-        AC_ERROR(pcap.h or libpcap.a not found in $withval)
++        AC_ERROR(pcap.h not found in $withval)
+      fi
+      ;;
+   esac ],

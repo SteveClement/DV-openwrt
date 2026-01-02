@@ -1,0 +1,9 @@
+--- a/decode.h
++++ b/decode.h
+@@ -11,6 +11,8 @@
+ #ifndef DECODE_H
+ #define DECODE_H
+ 
++#include <arpa/inet.h>
++
+ typedef int (*decode_func)(u_char *, int, u_char *, int);

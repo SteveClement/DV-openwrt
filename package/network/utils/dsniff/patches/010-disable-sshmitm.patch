@@ -1,0 +1,10 @@
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -69,7 +69,7 @@
+ LIBOBJS	= dummy.o @LIBOBJS@
+ 
+ PROGS	= arpspoof dnsspoof dsniff filesnarf macof mailsnarf msgsnarf \
+-	  sshmitm tcpkill tcpnice @TCPHIJACK@ urlsnarf webmitm @WEBSPY@ 
++	  tcpkill tcpnice @TCPHIJACK@ urlsnarf webmitm @WEBSPY@ 
+ 
+ CONFIGS	= dsniff.magic dsniff.services dnsspoof.hosts
