@@ -1,0 +1,992 @@
+--- a/arpspoof.c
++++ b/arpspoof.c
+@@ -25,7 +25,7 @@
+ extern char *ether_ntoa(struct ether_addr *);
+ extern int arp_cache_lookup(in_addr_t, struct ether_addr *);
+ 
+-static struct libnet_link_int *llif;
++static libnet_t *lnet;
+ static struct ether_addr spoof_mac, target_mac;
+ static in_addr_t spoof_ip, target_ip;
+ static char *intf;
+@@ -39,29 +39,29 @@
+ }
+ 
+ int
+-arp_send(struct libnet_link_int *llif, char *dev,
+-	 int op, u_char *sha, in_addr_t spa, u_char *tha, in_addr_t tpa)
++arp_send(int op, u_char *sha, in_addr_t spa, u_char *tha, in_addr_t tpa)
+ {
+-	char ebuf[128];
+-	u_char pkt[60];
++	struct libnet_ether_addr *hw;
+ 	
+ 	if (sha == NULL &&
+-	    (sha = (u_char *)libnet_get_hwaddr(llif, dev, ebuf)) == NULL) {
++	    (hw = libnet_get_hwaddr(lnet)) == NULL) {
+ 		return (-1);
+ 	}
++	if (sha == NULL)
++		sha = (u_char *)hw->ether_addr_octet;
++
+ 	if (spa == 0) {
+-		if ((spa = libnet_get_ipaddr(llif, dev, ebuf)) == 0)
++		if ((spa = libnet_get_ipaddr4(lnet)) == (in_addr_t)-1)
+ 			return (-1);
+-		spa = htonl(spa); /* XXX */
+ 	}
+ 	if (tha == NULL)
+ 		tha = "\xff\xff\xff\xff\xff\xff";
+ 	
+-	libnet_build_ethernet(tha, sha, ETHERTYPE_ARP, NULL, 0, pkt);
+-	
++	libnet_clear_packet(lnet);
+ 	libnet_build_arp(ARPHRD_ETHER, ETHERTYPE_IP, ETHER_ADDR_LEN, 4,
+ 			 op, sha, (u_char *)&spa, tha, (u_char *)&tpa,
+-			 NULL, 0, pkt + ETH_H);
++			 NULL, 0, lnet, 0);
++	libnet_build_ethernet(tha, sha, ETHERTYPE_ARP, NULL, 0, lnet, 0);
+ 
+ 	fprintf(stderr, "%s ",
+ 		ether_ntoa((struct ether_addr *)sha));
+@@ -69,17 +69,17 @@
+ 	if (op == ARPOP_REQUEST) {
+ 		fprintf(stderr, "%s 0806 42: arp who-has %s tell %s\n",
+ 			ether_ntoa((struct ether_addr *)tha),
+-			libnet_host_lookup(tpa, 0),
+-			libnet_host_lookup(spa, 0));
++			libnet_addr2name4(tpa, LIBNET_DONT_RESOLVE),
++			libnet_addr2name4(spa, LIBNET_DONT_RESOLVE));
+ 	}
+ 	else {
+ 		fprintf(stderr, "%s 0806 42: arp reply %s is-at ",
+ 			ether_ntoa((struct ether_addr *)tha),
+-			libnet_host_lookup(spa, 0));
++			libnet_addr2name4(spa, LIBNET_DONT_RESOLVE));
+ 		fprintf(stderr, "%s\n",
+ 			ether_ntoa((struct ether_addr *)sha));
+ 	}
+-	return (libnet_write_link_layer(llif, dev, pkt, sizeof(pkt)) == sizeof(pkt));
++	return (libnet_write(lnet) >= 0);
+ }
+ 
+ #ifdef __linux__
+@@ -117,7 +117,7 @@
+ 		/* XXX - force the kernel to arp. feh. */
+ 		arp_force(ip);
+ #else
+-		arp_send(llif, intf, ARPOP_REQUEST, NULL, 0, NULL, ip);
++		arp_send(ARPOP_REQUEST, NULL, 0, NULL, ip);
+ #endif
+ 		sleep(1);
+ 	}
+@@ -134,7 +134,7 @@
+ 	if (arp_find(spoof_ip, &spoof_mac)) {
+ 		for (i = 0; i < 3; i++) {
+ 			/* XXX - on BSD, requires ETHERSPOOF kernel. */
+-			arp_send(llif, intf, ARPOP_REPLY,
++			arp_send(ARPOP_REPLY,
+ 				 (u_char *)&spoof_mac, spoof_ip,
+ 				 (target_ip ? (u_char *)&target_mac : NULL),
+ 				 target_ip);
+@@ -148,7 +148,9 @@
+ main(int argc, char *argv[])
+ {
+ 	int c;
+-	char ebuf[PCAP_ERRBUF_SIZE];
++	char pcap_ebuf[PCAP_ERRBUF_SIZE];
++	char lnet_ebuf[LIBNET_ERRBUF_SIZE];
++	char *target = NULL;
+ 	
+ 	intf = NULL;
+ 	spoof_ip = target_ip = 0;
+@@ -159,8 +161,7 @@
+ 			intf = optarg;
+ 			break;
+ 		case 't':
+-			if ((target_ip = libnet_name_resolve(optarg, 1)) == -1)
+-				usage();
++			target = optarg;
+ 			break;
+ 		default:
+ 			usage();
+@@ -172,25 +173,32 @@
+ 	if (argc != 1)
+ 		usage();
+ 	
+-	if ((spoof_ip = libnet_name_resolve(argv[0], 1)) == -1)
++	if (intf == NULL && (intf = pcap_lookupdev(pcap_ebuf)) == NULL)
++		errx(1, "%s", pcap_ebuf);
++
++	if ((lnet = libnet_init(LIBNET_LINK, intf, lnet_ebuf)) == NULL)
++		errx(1, "%s", lnet_ebuf);
++
++	if ((spoof_ip = libnet_name2addr4(lnet, argv[0], LIBNET_RESOLVE)) ==
++	    (in_addr_t)-1)
+ 		usage();
+-	
+-	if (intf == NULL && (intf = pcap_lookupdev(ebuf)) == NULL)
+-		errx(1, "%s", ebuf);
+-	
+-	if ((llif = libnet_open_link_interface(intf, ebuf)) == 0)
+-		errx(1, "%s", ebuf);
++
++	if (target != NULL) {
++		if ((target_ip = libnet_name2addr4(lnet, target,
++		    LIBNET_RESOLVE)) == (in_addr_t)-1)
++			usage();
++	}
+ 	
+ 	if (target_ip != 0 && !arp_find(target_ip, &target_mac))
+ 		errx(1, "couldn't arp for host %s",
+-		     libnet_host_lookup(target_ip, 0));
++		     libnet_addr2name4(target_ip, LIBNET_DONT_RESOLVE));
+ 	
+ 	signal(SIGHUP, cleanup);
+ 	signal(SIGINT, cleanup);
+ 	signal(SIGTERM, cleanup);
+ 	
+ 	for (;;) {
+-		arp_send(llif, intf, ARPOP_REPLY, NULL, spoof_ip,
++		arp_send(ARPOP_REPLY, NULL, spoof_ip,
+ 			 (target_ip ? (u_char *)&target_mac : NULL),
+ 			 target_ip);
+ 		sleep(2);
+--- a/macof.c
++++ b/macof.c
+@@ -46,31 +46,33 @@
+ void
+ gen_mac(u_char *mac)
+ {
+-	*((in_addr_t *)mac) = libnet_get_prand(PRu32);
+-	*((u_short *)(mac + 4)) = libnet_get_prand(PRu16);
++	*((in_addr_t *)mac) = libnet_get_prand(LIBNET_PRu32);
++	*((u_short *)(mac + 4)) = libnet_get_prand(LIBNET_PRu16);
+ }
+ 
+ int
+ main(int argc, char *argv[])
+ {
+ 	int c, i;
+-	struct libnet_link_int *llif;
+-	char ebuf[PCAP_ERRBUF_SIZE];
++	libnet_t *lnet;
++	char pcap_ebuf[PCAP_ERRBUF_SIZE];
++	char lnet_ebuf[LIBNET_ERRBUF_SIZE];
++	char *src_arg = NULL;
++	char *dst_arg = NULL;
+ 	u_char sha[ETHER_ADDR_LEN], tha[ETHER_ADDR_LEN];
+ 	in_addr_t src, dst;
+ 	u_short sport, dport;
+ 	u_int32_t seq;
+-	u_char pkt[ETH_H + IP_H + TCP_H];
+ 	
+ 	while ((c = getopt(argc, argv, "vs:d:e:x:y:i:n:h?V")) != -1) {
+ 		switch (c) {
+ 		case 'v':
+ 			break;
+ 		case 's':
+-			Src = libnet_name_resolve(optarg, 0);
++			src_arg = optarg;
+ 			break;
+ 		case 'd':
+-			Dst = libnet_name_resolve(optarg, 0);
++			dst_arg = optarg;
+ 			break;
+ 		case 'e':
+ 			Tha = (u_char *)ether_aton(optarg);
+@@ -97,13 +99,20 @@
+ 	if (argc != 0)
+ 		usage();
+ 	
+-	if (!Intf && (Intf = pcap_lookupdev(ebuf)) == NULL)
+-		errx(1, "%s", ebuf);
++	if (!Intf && (Intf = pcap_lookupdev(pcap_ebuf)) == NULL)
++		errx(1, "%s", pcap_ebuf);
+ 	
+-	if ((llif = libnet_open_link_interface(Intf, ebuf)) == 0)
+-		errx(1, "%s", ebuf);
++	if ((lnet = libnet_init(LIBNET_LINK, Intf, lnet_ebuf)) == NULL)
++		errx(1, "%s", lnet_ebuf);
++
++	if (src_arg != NULL) {
++		Src = libnet_name2addr4(lnet, src_arg, LIBNET_DONT_RESOLVE);
++	}
++	if (dst_arg != NULL) {
++		Dst = libnet_name2addr4(lnet, dst_arg, LIBNET_DONT_RESOLVE);
++	}
+ 	
+-	libnet_seed_prand();
++	libnet_seed_prand(lnet);
+ 	
+ 	for (i = 0; i != Repeat; i++) {
+ 		
+@@ -113,39 +122,41 @@
+ 		else memcpy(tha, Tha, sizeof(tha));
+ 		
+ 		if (Src != 0) src = Src;
+-		else src = libnet_get_prand(PRu32);
++		else src = libnet_get_prand(LIBNET_PRu32);
+ 		
+ 		if (Dst != 0) dst = Dst;
+-		else dst = libnet_get_prand(PRu32);
++		else dst = libnet_get_prand(LIBNET_PRu32);
+ 		
+ 		if (Sport != 0) sport = Sport;
+-		else sport = libnet_get_prand(PRu16);
++		else sport = libnet_get_prand(LIBNET_PRu16);
+ 		
+ 		if (Dport != 0) dport = Dport;
+-		else dport = libnet_get_prand(PRu16);
++		else dport = libnet_get_prand(LIBNET_PRu16);
+ 
+-		seq = libnet_get_prand(PRu32);
+-		
+-		libnet_build_ethernet(tha, sha, ETHERTYPE_IP, NULL, 0, pkt);
+-		
+-		libnet_build_ip(TCP_H, 0, libnet_get_prand(PRu16), 0, 64,
+-				IPPROTO_TCP, src, dst, NULL, 0, pkt + ETH_H);
+-		
+-		libnet_build_tcp(sport, dport, seq, 0, TH_SYN, 512,
+-				 0, NULL, 0, pkt + ETH_H + IP_H);
+-		
+-		libnet_do_checksum(pkt + ETH_H, IPPROTO_IP, IP_H);
+-		libnet_do_checksum(pkt + ETH_H, IPPROTO_TCP, TCP_H);
++		seq = libnet_get_prand(LIBNET_PRu32);
+ 		
+-		if (libnet_write_link_layer(llif, Intf, pkt, sizeof(pkt)) < 0)
+-			errx(1, "write");
++		libnet_clear_packet(lnet);
++		if (libnet_build_tcp(sport, dport, seq, 0, TH_SYN, 512,
++				     0, 0, LIBNET_TCP_H, NULL, 0, lnet, 0) == -1)
++			errx(1, "%s", libnet_geterror(lnet));
++		if (libnet_build_ipv4(LIBNET_IPV4_H + LIBNET_TCP_H, 0,
++				      libnet_get_prand(LIBNET_PRu16), 0, 64,
++				      IPPROTO_TCP, 0, src, dst, NULL, 0,
++				      lnet, 0) == -1)
++			errx(1, "%s", libnet_geterror(lnet));
++		if (libnet_build_ethernet(tha, sha, ETHERTYPE_IP, NULL, 0,
++					  lnet, 0) == -1)
++			errx(1, "%s", libnet_geterror(lnet));
++		if (libnet_write(lnet) < 0)
++			errx(1, "%s", libnet_geterror(lnet));
+ 
+ 		fprintf(stderr, "%s ",
+ 			ether_ntoa((struct ether_addr *)sha));
+ 		fprintf(stderr, "%s %s.%d > %s.%d: S %u:%u(0) win 512\n",
+ 			ether_ntoa((struct ether_addr *)tha),
+-			libnet_host_lookup(Src, 0), sport,
+-			libnet_host_lookup(Dst, 0), dport, seq, seq);
++			libnet_addr2name4(src, LIBNET_DONT_RESOLVE), sport,
++			libnet_addr2name4(dst, LIBNET_DONT_RESOLVE), dport,
++			seq, seq);
+ 	}
+ 	exit(0);
+ }
+--- a/dnsspoof.c
++++ b/dnsspoof.c
+@@ -36,8 +36,8 @@
+ 
+ pcap_t		*pcap_pd = NULL;
+ int		 pcap_off = -1;
+-int		 lnet_sock = -1;
+-u_long		 lnet_ip = -1;
++libnet_t	*lnet = NULL;
++in_addr_t	 lnet_ip = (in_addr_t)-1;
+ 
+ void
+ usage(void)
+@@ -85,22 +85,14 @@
+ }
+ 
+ void
+-dns_init(char *dev, char *filename)
++dns_init(char *filename)
+ {
+ 	FILE *f;
+-	struct libnet_link_int *llif;
+ 	struct dnsent *de;
+ 	char *ip, *name, buf[1024];
+ 
+-	if ((llif = libnet_open_link_interface(dev, buf)) == NULL)
+-		errx(1, "%s", buf);
+-	
+-	if ((lnet_ip = libnet_get_ipaddr(llif, dev, buf)) == -1)
+-		errx(1, "%s", buf);
+-
+-	lnet_ip = htonl(lnet_ip);
+-	
+-	libnet_close_link_interface(llif);
++	if ((lnet_ip = libnet_get_ipaddr4(lnet)) == (in_addr_t)-1)
++		errx(1, "%s", libnet_geterror(lnet));
+ 
+ 	SLIST_INIT(&dns_entries);
+ 	
+@@ -178,16 +170,16 @@
+ void
+ dns_spoof(u_char *u, const struct pcap_pkthdr *pkthdr, const u_char *pkt)
+ {
+-	struct libnet_ip_hdr *ip;
++	struct libnet_ipv4_hdr *ip;
+ 	struct libnet_udp_hdr *udp;
+ 	HEADER *dns;
+ 	char name[MAXHOSTNAMELEN];
+-	u_char *p, *q, *end, buf[1024];
++	u_char *p, *q, *end, payload[1024];
+ 	int i, anslen, dnslen;
+ 	in_addr_t dst;
+ 	u_short type, class;
+ 
+-	ip = (struct libnet_ip_hdr *)(pkt + pcap_off);
++	ip = (struct libnet_ipv4_hdr *)(pkt + pcap_off);
+ 	udp = (struct libnet_udp_hdr *)(pkt + pcap_off + (ip->ip_hl * 4));
+ 	dns = (HEADER *)(udp + 1);
+ 	p = (u_char *)(dns + 1);
+@@ -210,7 +202,8 @@
+ 	if (class != C_IN)
+ 		return;
+ 
+-	p = buf + IP_H + UDP_H + dnslen;
++	memcpy(payload, (u_char *)dns, dnslen);
++	p = payload + dnslen;
+ 	
+ 	if (type == T_A) {
+ 		if ((dst = dns_lookup_a(name)) == -1)
+@@ -233,37 +226,37 @@
+ 	}
+ 	else return;
+ 	
+-	libnet_build_ip(UDP_H + dnslen + anslen, 0, libnet_get_prand(PRu16),
+-			0, 64, IPPROTO_UDP, ip->ip_dst.s_addr,
+-			ip->ip_src.s_addr, NULL, 0, buf);
+-	
+-	libnet_build_udp(ntohs(udp->uh_dport), ntohs(udp->uh_sport),
+-			 NULL, dnslen + anslen, buf + IP_H);
+-
+-	memcpy(buf + IP_H + UDP_H, (u_char *)dns, dnslen);
+-
+-	dns = (HEADER *)(buf + IP_H + UDP_H);
++	dns = (HEADER *)payload;
+ 	dns->qr = dns->ra = 1;
+ 	if (type == T_PTR) dns->aa = 1;
+ 	dns->ancount = htons(1);
+ 
+ 	dnslen += anslen;
+-	
+-	libnet_do_checksum(buf, IPPROTO_UDP, UDP_H + dnslen);
+-	
+-	if (libnet_write_ip(lnet_sock, buf, IP_H + UDP_H + dnslen) < 0)
+-		warn("write");
++
++	libnet_clear_packet(lnet);
++	if (libnet_build_udp(ntohs(udp->uh_dport), ntohs(udp->uh_sport),
++			     LIBNET_UDP_H + dnslen, 0, payload, dnslen, lnet, 0) == -1)
++		warnx("%s", libnet_geterror(lnet));
++	if (libnet_build_ipv4(LIBNET_IPV4_H + LIBNET_UDP_H + dnslen, 0,
++			      libnet_get_prand(LIBNET_PRu16), 0, 64, IPPROTO_UDP, 0,
++			      ip->ip_dst.s_addr, ip->ip_src.s_addr,
++			      NULL, 0, lnet, 0) == -1)
++		warnx("%s", libnet_geterror(lnet));
++	if (libnet_write(lnet) < 0)
++		warnx("%s", libnet_geterror(lnet));
+ 
+ 	fprintf(stderr, "%s.%d > %s.%d:  %d+ %s? %s\n",
+-	      libnet_host_lookup(ip->ip_src.s_addr, 0), ntohs(udp->uh_sport),
+-	      libnet_host_lookup(ip->ip_dst.s_addr, 0), ntohs(udp->uh_dport),
++	      libnet_addr2name4(ip->ip_src.s_addr, LIBNET_DONT_RESOLVE),
++	      ntohs(udp->uh_sport),
++	      libnet_addr2name4(ip->ip_dst.s_addr, LIBNET_DONT_RESOLVE),
++	      ntohs(udp->uh_dport),
+ 	      ntohs(dns->id), type == T_A ? "A" : "PTR", name);
+ }
+ 
+ void
+ cleanup(int sig)
+ {
+-	libnet_close_raw_sock(lnet_sock);
++	libnet_destroy(lnet);
+ 	pcap_close(pcap_pd);
+ 	exit(0);
+ }
+@@ -272,6 +265,7 @@
+ main(int argc, char *argv[])
+ {
+ 	char *p, *dev, *hosts, buf[1024];
++	char lnet_ebuf[LIBNET_ERRBUF_SIZE];
+ 	int i;
+ 
+ 	dev = hosts = NULL;
+@@ -294,26 +288,26 @@
+ 
+ 	if (dev == NULL && (dev = pcap_lookupdev(buf)) == NULL)
+ 		errx(1, "%s", buf);
+-	
+-	dns_init(dev, hosts);
++
++	if ((lnet = libnet_init(LIBNET_RAW4, dev, lnet_ebuf)) == NULL)
++		errx(1, "%s", lnet_ebuf);
++
++	dns_init(hosts);
+ 	
+ 	if (argc > 0) {
+ 		p = copy_argv(argv);
+ 		strlcpy(buf, p, sizeof(buf));
+ 	}
+ 	else snprintf(buf, sizeof(buf), "udp dst port 53 and not src %s",
+-		      libnet_host_lookup(lnet_ip, 0));
++		      libnet_addr2name4(lnet_ip, LIBNET_DONT_RESOLVE));
+ 	
+-	if ((pcap_pd = pcap_init(dev, buf, 128)) == NULL)
++	if ((pcap_pd = dsniff_pcap_init(dev, buf, 128)) == NULL)
+ 		errx(1, "couldn't initialize sniffing");
+ 
+ 	if ((pcap_off = pcap_dloff(pcap_pd)) < 0)
+ 		errx(1, "couldn't determine link layer offset");
+ 	
+-	if ((lnet_sock = libnet_open_raw_sock(IPPROTO_RAW)) == -1)
+-		errx(1, "couldn't initialize sending");
+-	
+-	libnet_seed_prand();
++	libnet_seed_prand(lnet);
+ 	
+ 	signal(SIGHUP, cleanup);
+ 	signal(SIGINT, cleanup);
+--- a/tcpkill.c
++++ b/tcpkill.c
+@@ -41,21 +41,21 @@
+   predict the correct seqnum to use, instead of brute force. i suk.
+ */
+ void
+-tcp_rst_loop(pcap_t *pd, int sock)
++tcp_rst_loop(pcap_t *pd, libnet_t *lnet)
+ {
+ 	struct pcap_pkthdr pkthdr;
+-	struct libnet_ip_hdr *ip;
++	struct libnet_ipv4_hdr *ip;
+ 	struct libnet_tcp_hdr *tcp;
+-	u_char *pkt, buf[IP_H + TCP_H];
++	u_char *pkt;
+ 	u_int32_t seq, ack;
+ 	u_short win;
+ 	int i;
+ 	
+-	libnet_seed_prand();
++	libnet_seed_prand(lnet);
+ 	
+ 	for (;;) {
+ 		if ((pkt = (char *)pcap_next(pd, &pkthdr)) != NULL) {
+-			ip = (struct libnet_ip_hdr *)(pkt + pcap_off);
++			ip = (struct libnet_ipv4_hdr *)(pkt + pcap_off);
+ 			if (ip->ip_p != IPPROTO_TCP) continue;
+ 			
+ 			tcp = (struct libnet_tcp_hdr *)
+@@ -65,30 +65,30 @@
+ 			ack = ntohl(tcp->th_ack);
+ 			win = ntohs(tcp->th_win);
+ 			
+-			libnet_build_ip(TCP_H, 0, 0, 0, 64, IPPROTO_TCP,
+-					ip->ip_dst.s_addr, ip->ip_src.s_addr,
+-					NULL, 0, buf);
+-			libnet_build_tcp(ntohs(tcp->th_dport),
+-					 ntohs(tcp->th_sport), 0, 0, TH_RST,
+-					 0, 0, NULL, 0, buf + IP_H);
+-			
+-			ip = (struct libnet_ip_hdr *)buf;
+-			tcp = (struct libnet_tcp_hdr *)(ip + 1);
+-			
+ 			for (i = 0; i < Opt_severity; i++) {
+-				ip->ip_id = libnet_get_prand(PRu16);
+ 				seq = ack + (i * win);
+-				tcp->th_seq = htonl(seq);
+-				
+-				libnet_do_checksum(buf, IPPROTO_TCP, TCP_H);
+-
+-				if (libnet_write_ip(sock, buf, sizeof(buf)) < 0)
+-					warn("write_ip");
++				libnet_clear_packet(lnet);
++				if (libnet_build_tcp(ntohs(tcp->th_dport),
++						     ntohs(tcp->th_sport), seq,
++						     0, TH_RST, 0, 0, 0, LIBNET_TCP_H,
++						     NULL, 0, lnet, 0) == -1)
++					warnx("%s", libnet_geterror(lnet));
++				if (libnet_build_ipv4(LIBNET_IPV4_H + LIBNET_TCP_H, 0,
++						      libnet_get_prand(LIBNET_PRu16),
++						      0, 64, IPPROTO_TCP, 0,
++						      ip->ip_dst.s_addr,
++						      ip->ip_src.s_addr,
++						      NULL, 0, lnet, 0) == -1)
++					warnx("%s", libnet_geterror(lnet));
++				if (libnet_write(lnet) < 0)
++					warnx("%s", libnet_geterror(lnet));
+ 				
+ 				fprintf(stderr, "%s:%d > %s:%d: R %u:%u(0) win 0\n",
+-					libnet_host_lookup(ip->ip_src.s_addr, 0),
++					libnet_addr2name4(ip->ip_src.s_addr,
++							  LIBNET_DONT_RESOLVE),
+ 					ntohs(tcp->th_sport),
+-					libnet_host_lookup(ip->ip_dst.s_addr, 0),
++					libnet_addr2name4(ip->ip_dst.s_addr,
++							  LIBNET_DONT_RESOLVE),
+ 					ntohs(tcp->th_dport), seq, seq);
+ 			}
+ 		}
+@@ -98,9 +98,11 @@
+ int
+ main(int argc, char *argv[])
+ {
+-	int c, sock;
++	int c;
+ 	char *p, *intf, *filter, ebuf[PCAP_ERRBUF_SIZE];
++	char lnet_ebuf[LIBNET_ERRBUF_SIZE];
+ 	pcap_t *pd;
++	libnet_t *lnet;
+ 	
+ 	intf = NULL;
+ 	
+@@ -133,18 +135,18 @@
+ 	
+ 	filter = copy_argv(argv);
+ 	
+-	if ((pd = pcap_init(intf, filter, 128)) == NULL)
++	if ((pd = dsniff_pcap_init(intf, filter, 128)) == NULL)
+ 		errx(1, "couldn't initialize sniffing");
+ 
+ 	if ((pcap_off = pcap_dloff(pd)) < 0)
+ 		errx(1, "couldn't determine link layer offset");
+-	
+-	if ((sock = libnet_open_raw_sock(IPPROTO_RAW)) == -1)
+-		errx(1, "couldn't initialize sending");
++
++	if ((lnet = libnet_init(LIBNET_RAW4, intf, lnet_ebuf)) == NULL)
++		errx(1, "%s", lnet_ebuf);
+ 	
+ 	warnx("listening on %s [%s]", intf, filter);
+ 	
+-	tcp_rst_loop(pd, sock);
++	tcp_rst_loop(pd, lnet);
+   
+ 	/* NOTREACHED */
+ 	
+--- a/tcpnice.c
++++ b/tcpnice.c
+@@ -17,6 +17,7 @@
+ #include <stdlib.h>
+ #include <unistd.h>
+ #include <string.h>
++#include <netinet/ip_icmp.h>
+ #include <err.h>
+ #include <libnet.h>
+ #include <pcap.h>
+@@ -42,22 +43,22 @@
+ }
+ 
+ void
+-tcp_nice_loop(pcap_t *pd, int sock)
++tcp_nice_loop(pcap_t *pd, libnet_t *lnet)
+ {
+ 	struct pcap_pkthdr pkthdr;
+-	struct libnet_ip_hdr *ip;
++	struct libnet_ipv4_hdr *ip;
+ 	struct libnet_tcp_hdr *tcp;
+-	struct libnet_icmp_hdr *icmp;
+-	u_char *pkt, buf[IP_H + ICMP_ECHO_H + 128];
++	u_char *pkt;
++	u_char payload[LIBNET_IPV4_H + 128];
+ 	int len, nice;
+ 	
+-	libnet_seed_prand();
++	libnet_seed_prand(lnet);
+ 	
+ 	nice = 160 / Opt_nice;
+ 	
+ 	for (;;) {
+ 		if ((pkt = (char *)pcap_next(pd, &pkthdr)) != NULL) {
+-			ip = (struct libnet_ip_hdr *)(pkt + pcap_off);
++			ip = (struct libnet_ipv4_hdr *)(pkt + pcap_off);
+ 			if (ip->ip_p != IPPROTO_TCP) continue;
+ 			
+ 			tcp = (struct libnet_tcp_hdr *)
+@@ -69,52 +70,57 @@
+ 			if (Opt_icmp) {
+ 				/* Send ICMP source quench. */
+ 				len = (ip->ip_hl * 4) + 8;
+-				libnet_build_ip(ICMP_ECHO_H + len, 0,
+-						libnet_get_prand(PRu16),
+-						0, 64, IPPROTO_ICMP,
+-						ip->ip_dst.s_addr,
+-						ip->ip_src.s_addr,
+-						NULL, 0, buf);
+-				
+-				icmp = (struct libnet_icmp_hdr *)(buf + IP_H);
+-				icmp->icmp_type = 4;
+-				icmp->icmp_code = 0;
+-				memcpy((u_char *)icmp + ICMP_ECHO_H,
+-				       (u_char *)ip, len);
+-				
+-				libnet_do_checksum(buf, IPPROTO_ICMP,
+-						   ICMP_ECHO_H + len);
+-
+-				len += (IP_H + ICMP_ECHO_H);
+-
+-				if (libnet_write_ip(sock, buf, len) != len)
+-					warn("write");
++				if (len > (int)sizeof(payload))
++					continue;
++				memcpy(payload, (u_char *)ip, len);
++
++				libnet_clear_packet(lnet);
++				if (libnet_build_icmpv4_unreach(
++					    ICMP_SOURCEQUENCH, 0, 0,
++					    payload, len, lnet, 0) == -1)
++					warnx("%s", libnet_geterror(lnet));
++				if (libnet_build_ipv4(
++					    LIBNET_IPV4_H + LIBNET_ICMPV4_UNREACH_H + len,
++					    0, libnet_get_prand(LIBNET_PRu16), 0, 64,
++					    IPPROTO_ICMP, 0, ip->ip_dst.s_addr,
++					    ip->ip_src.s_addr, NULL, 0,
++					    lnet, 0) == -1)
++					warnx("%s", libnet_geterror(lnet));
++				if (libnet_write(lnet) < 0)
++					warnx("%s", libnet_geterror(lnet));
+ 
+ 				fprintf(stderr, "%s > %s: icmp: source quench\n",
+-				     libnet_host_lookup(ip->ip_dst.s_addr, 0),
+-				     libnet_host_lookup(ip->ip_src.s_addr, 0));
++				     libnet_addr2name4(ip->ip_dst.s_addr,
++						       LIBNET_DONT_RESOLVE),
++				     libnet_addr2name4(ip->ip_src.s_addr,
++						       LIBNET_DONT_RESOLVE));
+ 			}
+ 			/* Send tiny window advertisement. */
+-			ip->ip_hl = 5;
+-			ip->ip_len = htons(IP_H + TCP_H);
+-			ip->ip_id = libnet_get_prand(PRu16);
+-			memcpy(buf, (u_char *)ip, IP_H);
+-			
+-			tcp->th_off = 5;
+-			tcp->th_win = htons(nice);
+-			memcpy(buf + IP_H, (u_char *)tcp, TCP_H);
+-			
+-			libnet_do_checksum(buf, IPPROTO_TCP, TCP_H);
+-
+-			len = IP_H + TCP_H;
+-
+-			if (libnet_write_ip(sock, buf, len) != len)
+-				warn("write");
++			libnet_clear_packet(lnet);
++			if (libnet_build_tcp(ntohs(tcp->th_sport),
++					     ntohs(tcp->th_dport),
++					     ntohl(tcp->th_seq),
++					     ntohl(tcp->th_ack),
++					     tcp->th_flags, nice, 0,
++					     ntohs(tcp->th_urp), LIBNET_TCP_H,
++					     NULL, 0, lnet, 0) == -1)
++				warnx("%s", libnet_geterror(lnet));
++			if (libnet_build_ipv4(LIBNET_IPV4_H + LIBNET_TCP_H, ip->ip_tos,
++					      libnet_get_prand(LIBNET_PRu16), 0,
++					      ip->ip_ttl, IPPROTO_TCP, 0,
++					      ip->ip_src.s_addr,
++					      ip->ip_dst.s_addr, NULL, 0,
++					      lnet, 0) == -1)
++				warnx("%s", libnet_geterror(lnet));
++			if (libnet_write(lnet) < 0)
++				warnx("%s", libnet_geterror(lnet));
+ 
+ 			fprintf(stderr, "%s:%d > %s:%d: . ack %u win %d\n",
+-				libnet_host_lookup(ip->ip_src.s_addr, 0),
++				libnet_addr2name4(ip->ip_src.s_addr,
++						  LIBNET_DONT_RESOLVE),
+ 				ntohs(tcp->th_sport),
+-				libnet_host_lookup(ip->ip_dst.s_addr, 0),
++				libnet_addr2name4(ip->ip_dst.s_addr,
++						  LIBNET_DONT_RESOLVE),
+ 				ntohs(tcp->th_dport),
+ 				ntohl(tcp->th_ack), nice);
+ 		}
+@@ -124,9 +130,11 @@
+ int
+ main(int argc, char *argv[])
+ {
+-	int c, sock;
++	int c;
+ 	char *intf, *filter, ebuf[PCAP_ERRBUF_SIZE];
++	char lnet_ebuf[LIBNET_ERRBUF_SIZE];
+ 	pcap_t *pd;
++	libnet_t *lnet;
+ 	
+ 	intf = NULL;
+ 	
+@@ -159,18 +167,18 @@
+ 
+ 	filter = copy_argv(argv);
+ 	
+-	if ((pd = pcap_init(intf, filter, 128)) == NULL)
++	if ((pd = dsniff_pcap_init(intf, filter, 128)) == NULL)
+ 		errx(1, "couldn't initialize sniffing");
+ 
+ 	if ((pcap_off = pcap_dloff(pd)) < 0)
+ 		errx(1, "couldn't determine link layer offset");
+-	
+-	if ((sock = libnet_open_raw_sock(IPPROTO_RAW)) == -1)
+-		errx(1, "couldn't initialize sending");
++
++	if ((lnet = libnet_init(LIBNET_RAW4, intf, lnet_ebuf)) == NULL)
++		errx(1, "%s", lnet_ebuf);
+ 	
+ 	warnx("listening on %s [%s]", intf, filter);
+ 	
+-	tcp_nice_loop(pd, sock);
++	tcp_nice_loop(pd, lnet);
+ 	
+ 	/* NOTREACHED */
+ 	
+--- a/record.c
++++ b/record.c
+@@ -62,8 +62,10 @@
+ 	tm = localtime(&rec->time);
+ 	strftime(tstr, sizeof(tstr), "%x %X", tm);
+ 	
+-	srcp = libnet_host_lookup(rec->src, Opt_dns);
+-	dstp = libnet_host_lookup(rec->dst, Opt_dns);
++	srcp = libnet_addr2name4(rec->src,
++				 Opt_dns ? LIBNET_RESOLVE : LIBNET_DONT_RESOLVE);
++	dstp = libnet_addr2name4(rec->dst,
++				 Opt_dns ? LIBNET_RESOLVE : LIBNET_DONT_RESOLVE);
+ 
+ 	if ((pr = getprotobynumber(rec->proto)) == NULL)
+ 		protop = "unknown";
+@@ -205,4 +207,3 @@
+ {
+ 	db->close(db);
+ }
+-
+--- a/filesnarf.c
++++ b/filesnarf.c
+@@ -134,8 +134,8 @@
+ 	int fd;
+ 
+ 	warnx("%s.%d > %s.%d: %s (%d@%d)",
+-	      libnet_host_lookup(addr->daddr, 0), addr->dest,
+-	      libnet_host_lookup(addr->saddr, 0), addr->source,
++	      libnet_addr2name4(addr->daddr, LIBNET_DONT_RESOLVE), addr->dest,
++	      libnet_addr2name4(addr->saddr, LIBNET_DONT_RESOLVE), addr->source,
+ 	      ma->filename, len, ma->offset);
+ 	
+ 	if ((fd = open(ma->filename, O_WRONLY|O_CREAT, 0644)) >= 0) {
+@@ -353,7 +353,7 @@
+ }
+ 
+ void
+-decode_udp_nfs(struct libnet_ip_hdr *ip)
++decode_udp_nfs(struct libnet_ipv4_hdr *ip)
+ {
+ 	static struct tuple4 addr;
+ 	struct libnet_udp_hdr *udp;
+--- a/urlsnarf.c
++++ b/urlsnarf.c
+@@ -139,14 +139,16 @@
+ 		if (user == NULL)
+ 			user = "-";
+ 		if (vhost == NULL)
+-			vhost = libnet_host_lookup(addr->daddr, Opt_dns);
++			vhost = libnet_addr2name4(addr->daddr,
++				Opt_dns ? LIBNET_RESOLVE : LIBNET_DONT_RESOLVE);
+ 		if (referer == NULL)
+ 			referer = "-";
+ 		if (agent == NULL)
+ 			agent = "-";
+ 		
+ 		printf("%s - %s [%s] \"%s http://%s%s\" - - \"%s\" \"%s\"\n",
+-		       libnet_host_lookup(addr->saddr, Opt_dns),
++		       libnet_addr2name4(addr->saddr,
++			       Opt_dns ? LIBNET_RESOLVE : LIBNET_DONT_RESOLVE),
+ 		       user, timestamp(), req, vhost, uri, referer, agent);
+ 	}
+ 	fflush(stdout);
+--- a/webspy.c
++++ b/webspy.c
+@@ -124,7 +124,7 @@
+ 		if (auth == NULL)
+ 			auth = "";
+ 		if (vhost == NULL)
+-			vhost = libnet_host_lookup(addr->daddr, 0);
++			vhost = libnet_addr2name4(addr->daddr, LIBNET_DONT_RESOLVE);
+ 		
+ 		snprintf(cmd, sizeof(cmd), "openURL(http://%s%s%s%s)",
+ 			 auth, *auth ? "@" : "", vhost, uri);
+@@ -179,6 +179,8 @@
+ main(int argc, char *argv[])
+ {
+ 	int c;
++	char lnet_ebuf[LIBNET_ERRBUF_SIZE];
++	libnet_t *lnet;
+ 	
+ 	while ((c = getopt(argc, argv, "i:h?V")) != -1) {
+ 		switch (c) {
+@@ -198,8 +200,14 @@
+ 	cmdtab[0] = cmd;
+ 	cmdtab[1] = NULL;
+ 	
+-	if ((host = libnet_name_resolve(argv[0], 1)) == -1)
++	if ((lnet = libnet_init(LIBNET_RAW4, NULL, lnet_ebuf)) == NULL)
++		errx(1, "%s", lnet_ebuf);
++
++	if ((host = libnet_name2addr4(lnet, argv[0], LIBNET_RESOLVE)) ==
++	    (in_addr_t)-1)
+ 		errx(1, "unknown host");
++
++	libnet_destroy(lnet);
+ 	
+ 	if ((dpy = XOpenDisplay(NULL)) == NULL)
+ 		errx(1, "connection to local X server failed!");
+--- a/webmitm.c
++++ b/webmitm.c
+@@ -45,6 +45,8 @@
+ SSL	*ssl_client, *ssl_server;
+ struct	 sockaddr_in csin, ssin;
+ int	 do_ssl, sig_pipe[2];
++static libnet_t *lnet;
++static char lnet_ebuf[LIBNET_ERRBUF_SIZE];
+ 
+ extern int decode_http(char *, int, char *, int);
+ 
+@@ -234,7 +236,9 @@
+ 	memset(&ssin, 0, sizeof(ssin));
+ 	ssin.sin_family = AF_INET;
+ 	ssin.sin_port = do_ssl ? htons(443) : htons(80);
+-	ssin.sin_addr.s_addr = libnet_name_resolve(vhost, 1);
++	ssin.sin_addr.s_addr = libnet_name2addr4(lnet, vhost, LIBNET_RESOLVE);
++	if (ssin.sin_addr.s_addr == (in_addr_t)-1)
++		errx(1, "unknown host");
+ 
+ 	if (ssin.sin_addr.s_addr == ntohl(INADDR_LOOPBACK))
+ 		errx(1, "recursion considered harmful");
+@@ -478,6 +482,9 @@
+ 	if (argc != 0)
+ 		usage();
+ 
++	if ((lnet = libnet_init(LIBNET_RAW4, NULL, lnet_ebuf)) == NULL)
++		errx(1, "%s", lnet_ebuf);
++
+ 	record_init(NULL);
+ 
+ 	cert_init();
+--- a/sshmitm.c
++++ b/sshmitm.c
+@@ -361,6 +361,8 @@
+ 	int c;
+ 	u_long ip;
+ 	u_short lport, rport;
++	char lnet_ebuf[LIBNET_ERRBUF_SIZE];
++	libnet_t *lnet;
+ 
+ 	lport = rport = 22;
+ 
+@@ -386,10 +388,16 @@
+ 	
+ 	if (argc < 1)
+ 		usage();
+-	
+-	if ((ip = libnet_name_resolve(argv[0], 1)) == -1)
++
++	if ((lnet = libnet_init(LIBNET_RAW4, NULL, lnet_ebuf)) == NULL)
++		errx(1, "%s", lnet_ebuf);
++
++	if ((ip = libnet_name2addr4(lnet, argv[0], LIBNET_RESOLVE)) ==
++	    (u_long)-1)
+ 		usage();
+ 
++	libnet_destroy(lnet);
++
+ 	if (argc == 2 && (rport = atoi(argv[1])) == 0)
+ 		usage();
+ 	
+--- a/pcaputil.h
++++ b/pcaputil.h
+@@ -11,7 +11,7 @@
+ #ifndef PCAPUTIL_H
+ #define PCAPUTIL_H
+ 
+-pcap_t *pcap_init(char *intf, char *filter, int snaplen);
++pcap_t *dsniff_pcap_init(char *intf, char *filter, int snaplen);
+ 
+ int	pcap_dloff(pcap_t *pd);
+ 
+--- a/pcaputil.c
++++ b/pcaputil.c
+@@ -56,7 +56,7 @@
+ }
+ 
+ pcap_t *
+-pcap_init(char *intf, char *filter, int snaplen)
++dsniff_pcap_init(char *intf, char *filter, int snaplen)
+ {
+ 	pcap_t *pd;
+ 	u_int net, mask;
+--- a/trigger.c
++++ b/trigger.c
+@@ -273,7 +273,7 @@
+ }
+ 	
+ void
+-trigger_ip(struct libnet_ip_hdr *ip)
++trigger_ip(struct libnet_ipv4_hdr *ip)
+ {
+ 	struct trigger *t, tr;
+ 	u_char *buf;
+@@ -302,7 +302,7 @@
+ 
+ /* libnids needs a nids_register_udp()... */
+ void
+-trigger_udp(struct libnet_ip_hdr *ip)
++trigger_udp(struct libnet_ipv4_hdr *ip)
+ {
+ 	struct trigger *t, tr;
+ 	struct libnet_udp_hdr *udp;
+@@ -434,7 +434,7 @@
+ }
+ 
+ void
+-trigger_tcp_raw(struct libnet_ip_hdr *ip)
++trigger_tcp_raw(struct libnet_ipv4_hdr *ip)
+ {
+ 	struct trigger *t, tr;
+ 	struct libnet_tcp_hdr *tcp;
+--- a/trigger.h
++++ b/trigger.h
+@@ -24,10 +24,10 @@
+ int	trigger_set_tcp(int port, char *name);
+ int	trigger_set_rpc(int program, char *name);
+ 
+-void	trigger_ip(struct libnet_ip_hdr *ip);
+-void	trigger_udp(struct libnet_ip_hdr *ip);
++void	trigger_ip(struct libnet_ipv4_hdr *ip);
++void	trigger_udp(struct libnet_ipv4_hdr *ip);
+ void	trigger_tcp(struct tcp_stream *ts, void **conn_save);
+-void	trigger_tcp_raw(struct libnet_ip_hdr *ip);
++void	trigger_tcp_raw(struct libnet_ipv4_hdr *ip);
+ void	trigger_tcp_raw_timeout(int signal);
+ void	trigger_rpc(int program, int proto, int port);
+ 
+--- a/tcp_raw.c
++++ b/tcp_raw.c
+@@ -117,7 +117,7 @@
+ }
+ 
+ struct iovec *
+-tcp_raw_input(struct libnet_ip_hdr *ip, struct libnet_tcp_hdr *tcp, int len)
++tcp_raw_input(struct libnet_ipv4_hdr *ip, struct libnet_tcp_hdr *tcp, int len)
+ {
+ 	struct tha tha;
+ 	struct tcp_conn *conn;
+--- a/tcp_raw.h
++++ b/tcp_raw.h
+@@ -15,7 +15,7 @@
+ 				   u_short sport, u_short dport,
+ 				   u_char *buf, int len);
+ 
+-struct iovec   *tcp_raw_input(struct libnet_ip_hdr *ip,
++struct iovec   *tcp_raw_input(struct libnet_ipv4_hdr *ip,
+ 			      struct libnet_tcp_hdr *tcp, int len);
+ 
+ void		tcp_raw_timeout(int timeout, tcp_raw_callback_t callback);

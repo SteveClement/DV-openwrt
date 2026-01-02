@@ -1,0 +1,40 @@
+--- a/decode_yp.c
++++ b/decode_yp.c
+@@ -15,14 +15,39 @@
+ #include <sys/types.h>
+ #include <sys/param.h>
+ #include <rpc/rpc.h>
++#ifdef __has_include
++#if __has_include(<rpcsvc/yp_prot.h>)
+ #include <rpcsvc/yp_prot.h>
++#endif
++#if __has_include(<rpcsvc/yppasswd.h>)
+ #include <rpcsvc/yppasswd.h>
++#endif
++#endif
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+ #include "rpc.h"
+ #include "decode.h"
+ 
++#ifndef YPPROG
++#define YPPROG 100004
++#endif
++#ifndef YPVERS
++#define YPVERS 2
++#endif
++#ifndef YPPROC_DOMAIN
++#define YPPROC_DOMAIN 1
++#endif
++#ifndef YPMAXDOMAIN
++#define YPMAXDOMAIN 64
++#endif
++#ifndef YPPASSWDPROG
++#define YPPASSWDPROG 100009
++#endif
++#ifndef YPPASSWDPROC_UPDATE
++#define YPPASSWDPROC_UPDATE 1
++#endif
++
+ /* XXX - <rpcsvc/yppasswd.x> varies on different systems :-( */

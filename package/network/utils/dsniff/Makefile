@@ -27,7 +27,7 @@ define Package/dsniff
   CATEGORY:=Network
   TITLE:=Network auditing and penetration testing tools
   URL:=https://www.monkey.org/~dugsong/dsniff/
-  DEPENDS:=+libpcap +libopenssl +libdb47 +libnet +libnids
+  DEPENDS:=+libpcap +libopenssl +libdb47 +libnet +libnids +libtirpc
 endef
 
 define Package/dsniff/description
@@ -45,13 +45,19 @@ CONFIGURE_ARGS += \
 	--without-x
 
 CONFIGURE_VARS += \
-	PATH="$(STAGING_DIR)/usr/bin:$$PATH" \
-	ac_cv_path_libnet_config="$(STAGING_DIR)/usr/bin/libnet-config"
+	PATH="$(STAGING_DIR_TOOLCHAIN)/bin:$(STAGING_DIR_HOST)/bin:/usr/bin:/bin:$(STAGING_DIR)/usr/bin" \
+	CC="$(TOOLCHAIN_ROOT_DIR)/bin/$(TARGET_CROSS)gcc" \
+	CXX="$(TOOLCHAIN_ROOT_DIR)/bin/$(TARGET_CROSS)g++" \
+	ac_cv_path_libnet_config="$(STAGING_DIR)/usr/bin/libnet-config" \
+	CFLAGS="$(TARGET_CFLAGS) -I$(STAGING_DIR)/usr/include/tirpc" \
+	CPPFLAGS="$(TARGET_CPPFLAGS) -I$(STAGING_DIR)/usr/include/tirpc"
+
+TARGET_LDFLAGS += -ltirpc
 
 define Package/dsniff/install
 	$(INSTALL_DIR) $(1)/usr/sbin
 	for f in arpspoof dnsspoof dsniff filesnarf macof mailsnarf msgsnarf \
-		sshmitm tcpkill tcpnice urlsnarf webmitm; do \
+		tcpkill tcpnice urlsnarf webmitm; do \
 		if [ -f "$(PKG_BUILD_DIR)/$$f" ]; then \
 			$(INSTALL_BIN) "$(PKG_BUILD_DIR)/$$f" "$(1)/usr/sbin/"; \
 		fi; \
