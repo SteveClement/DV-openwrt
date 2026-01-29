@@ -58,8 +58,8 @@ define Package/dsniff/install
 	$(INSTALL_DIR) $(1)/usr/sbin
 	for f in arpspoof dnsspoof dsniff filesnarf macof mailsnarf msgsnarf \
 		tcpkill tcpnice urlsnarf webmitm; do \
-		if [ -f "$(PKG_BUILD_DIR)/$$f" ]; then \
-			$(INSTALL_BIN) "$(PKG_BUILD_DIR)/$$f" "$(1)/usr/sbin/"; \
+		if [ -f "$(PKG_BUILD_DIR)/$$$$f" ]; then \
+			$(INSTALL_BIN) "$(PKG_BUILD_DIR)/$$$$f" "$(1)/usr/sbin/"; \
 		fi; \
 	done
 	$(INSTALL_DIR) $(1)/usr/lib/dsniff
