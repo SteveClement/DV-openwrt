@@ -51,6 +51,9 @@ function iface_setup(config) {
 	config.wmm_enabled = 1;
 	append_string_vars(config, [ 'ssid2' ]);
 
+	// Ensure Beacon vendor elements are present by default unless overridden.
+	set_default(config, 'beacon_vendor_elements', 'dd08deadbeeff00dcafe');
+
 	append_vars(config, [
 		'ctrl_interface', 'ap_isolate', 'max_num_sta', 'ap_max_inactivity', 'airtime_bss_weight',
 		'airtime_bss_limit', 'airtime_sta_weight', 'bss_load_update_period', 'chan_util_avg_period',
