@@ -1,0 +1,33 @@
+--- a/configure.in
++++ b/configure.in
+@@ -116,8 +116,29 @@
+ 	AC_DEFINE(HAVE_DB_185_H)
+ 	DBINC="-I$withval/include"
+ 	DBLIB="-L$withval/lib -ldb"
++     elif test -f $withval/include/db.h; then
++	owd=`pwd`
++	if cd $withval; then withval=`pwd`; cd $owd; fi
++	DBINC="-I$withval/include"
++	has_db_lib_so=no
++	if ls $withval/lib/libdb.so.* >/dev/null 2>&1; then
++		has_db_lib_so=yes
++	fi
++	has_db_so=no
++	if ls $withval/libdb.so.* >/dev/null 2>&1; then
++		has_db_so=yes
++	fi
++	if test -f $withval/lib/libdb.a -o -f $withval/lib/libdb.so -o $has_db_lib_so = yes; then
++		AC_DEFINE(HAVE_DB_H)
++		DBLIB="-L$withval/lib -ldb"
++	elif test -f $withval/libdb.a -o -f $withval/libdb.so -o $has_db_so = yes; then
++		AC_DEFINE(HAVE_DB_H)
++		DBLIB="-L$withval -ldb"
++	else
++		AC_MSG_ERROR([db.h found but libdb not found in $withval])
++	fi
+      else
+-        AC_ERROR(db_185.h or libdb.a not found in $withval or not configured with --enable-compat185)
++        AC_MSG_ERROR([db_185.h/libdb.a or db.h/libdb not found in $withval])
+      fi
+      ;;
+   esac ],

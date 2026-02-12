@@ -1,0 +1,22 @@
+#!/bin/sh /etc/rc.common
+
+USE_PROCD=1
+START=95
+STOP=10
+
+PROG="/usr/sbin/dsniff"
+INTF="eth0"
+
+start_service() {
+	local stamp log_file
+
+	stamp="$(date +%Y%m%d-%H%M%S)"
+	log_file="/tmp/dsniff-${stamp}.log"
+
+	procd_open_instance
+	procd_set_param command /bin/sh -c "exec ${PROG} -i ${INTF} >>\"${log_file}\" 2>&1"
+	procd_set_param respawn
+	procd_set_param stdout 0
+	procd_set_param stderr 0
+	procd_close_instance
+}
