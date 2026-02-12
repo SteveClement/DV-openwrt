@@ -1,0 +1,80 @@
+--- a/record.c
++++ b/record.c
+@@ -129,7 +129,11 @@
+ 
+ 	key = record_hash(rec);
+ 	
++#ifdef HAVE_DB_H
++	if (db->put(db, NULL, key, &data, DB_NOOVERWRITE) == 0)
++#else
+ 	if (db->put(db, key, &data, R_NOOVERWRITE) == 0)
++#endif
+ 		db->sync(db, 0);
+ 	
+ 	return (1);
+@@ -142,7 +146,14 @@
+ 	XDR xdrs;
+ 	struct rec rec;
+ 	
++#ifdef HAVE_DB_H
++	DBC *dbc;
++	if (db->cursor(db, NULL, &dbc, 0) != 0)
++		return;
++	while (dbc->c_get(dbc, &key, &data, DB_NEXT) == 0) {
++#else
+ 	while (db->seq(db, &key, &data, R_NEXT) == 0) {	
++#endif
+ 		memset(&rec, 0, sizeof(rec));
+ 		xdrmem_create(&xdrs, data.data, data.size, XDR_DECODE);
+ 		
+@@ -151,6 +162,9 @@
+ 		}
+ 		xdr_destroy(&xdrs);
+ 	}
++#ifdef HAVE_DB_H
++	dbc->c_close(dbc);
++#endif
+ }
+ 
+ int
+@@ -158,6 +172,22 @@
+ {
+ 	int flags, mode;
+ 	
++#ifdef HAVE_DB_H
++	u_int32_t dbflags;
++
++	if (db_create(&db, NULL, 0) != 0)
++		return (0);
++
++	if (Opt_read) {
++		dbflags = DB_RDONLY;
++		mode = 0;
++	} else {
++		dbflags = DB_CREATE;
++		mode = S_IRUSR|S_IWUSR;
++	}
++	if (db->open(db, NULL, file, NULL, DB_BTREE, dbflags, mode) != 0)
++		return (0);
++#else
+ 	if (Opt_read) {
+ 		flags = O_RDONLY;
+ 		mode = 0;
+@@ -169,6 +199,7 @@
+ 	if ((db = dbopen(file, flags, mode, DB_BTREE, NULL)) == NULL)
+ 		return (0);
+ 
++#endif
+ 	return (1);
+ }
+ 
+@@ -205,5 +236,9 @@
+ void
+ record_close(void)
+ {
++#ifdef HAVE_DB_H
++	db->close(db, 0);
++#else
+ 	db->close(db);
++#endif
+ }
