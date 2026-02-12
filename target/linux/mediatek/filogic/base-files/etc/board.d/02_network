@@ -23,7 +23,8 @@ mediatek_setup_interfaces()
 	zbtlink,zbt-z8103ax-c)
 		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3" eth1
 		;;
-	acelink,ew-7886cax)
+	acelink,ew-7886cax|\
+	tplink,eap683-lr)
 		ucidef_set_interface_lan "eth0" "dhcp"
 		;;
 	acer,predator-w6|\
@@ -88,12 +89,6 @@ mediatek_setup_interfaces()
 	bananapi,bpi-r3)
 		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3 lan4 sfp2" "sfp1 wan"
 		;;
-	bananapi,bpi-r3-mini|\
-	edgecore,eap111|\
-	huasifei,wh3000|\
-	huasifei,wh3000-pro)
-		ucidef_set_interfaces_lan_wan eth0 eth1
-		;;
 	bananapi,bpi-r4)
 		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3 sfp-lan" "wan sfp-wan"
 		;;
@@ -123,11 +118,20 @@ mediatek_setup_interfaces()
 	zyxel,nwa50ax-pro)
 		ucidef_set_interface_lan "eth0"
 		;;
+	airpi,ap3000m|\
+	bananapi,bpi-r3-mini|\
+	edgecore,eap111|\
+	huasifei,wh3000|\
+	huasifei,wh3000-pro)
+		ucidef_set_interfaces_lan_wan eth0 eth1
+		;;
+	bazis,ax3000wm|\
 	cudy,m3000-v1|\
 	cudy,tr3000-256mb-v1|\
 	cudy,tr3000-v1|\
 	cudy,tr3000-v1-ubootmod|\
 	glinet,gl-mt2500|\
+	glinet,gl-mt2500-airoha|\
 	glinet,gl-mt3000|\
 	glinet,gl-x3000|\
 	glinet,gl-xe3000|\
@@ -168,6 +172,9 @@ mediatek_setup_interfaces()
 	mercusys,mr90x-v1|\
 	mercusys,mr90x-v1-ubi)
 		ucidef_set_interfaces_lan_wan "lan0 lan1 lan2" eth1
+		;;
+	tenda,be12-pro)
+		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3 eth1" eth2
 		;;
 	tplink,fr365-v1)
 		ucidef_set_interfaces_lan_wan "port1 port3 port4 port5 port6" "port2"
@@ -210,6 +217,11 @@ mediatek_setup_macs()
 	local label_mac=""
 
 	case $board in
+	airpi,ap3000m)
+		base_mac=$(macaddr_generate_from_mmc_cid mmcblk0)
+		lan_mac="$base_mac"
+		wan_mac="$(macaddr_add "$base_mac" 1)"
+		;;
 	acer,predator-w6|\
 	acer,predator-w6d|\
 	acer,vero-w6m)
@@ -265,6 +277,10 @@ mediatek_setup_macs()
 		label_mac=$(mtd_get_mac_ascii product_info ethaddr)
 		wan_mac=$label_mac
 		lan_mac=$(macaddr_add "$label_mac" 1)
+		;;
+	tplink,eap683-lr)
+		label_mac=$(get_mac_binary "/tmp/factory/default-mac" 0)
+		lan_mac=$label_mac
 		;;
 	tplink,fr365-v1)
 		lan_mac=$(strings /dev/mtd11 | grep 'option macaddr' | awk -F"'" '{print $2}')
