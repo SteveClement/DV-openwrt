@@ -73,6 +73,6 @@
 +
 +# Additional vendor specific elements for Beacon frames only
 +# This uses the same hex format as vendor_elements
-+#beacon_vendor_elements=dd0411223301
++#beacon_vendor_elements=dd08deadbeeff00dcafe
  
  # Additional vendor specific elements for (Re)Association Response frames
