@@ -8,7 +8,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=dsniff
 PKG_VERSION:=2.3
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://www.monkey.org/~dugsong/$(PKG_NAME)/
@@ -66,6 +66,17 @@ define Package/dsniff/install
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/dsniff.magic $(1)/usr/lib/dsniff/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/dsniff.services $(1)/usr/lib/dsniff/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/dnsspoof.hosts $(1)/usr/lib/dsniff/
+	$(INSTALL_DIR) $(1)/etc/init.d
+	$(INSTALL_BIN) ./files/dsniff.init $(1)/etc/init.d/dsniff
+	$(INSTALL_DIR) $(1)/etc/uci-defaults
+	$(INSTALL_BIN) ./files/99-dsniff-enable $(1)/etc/uci-defaults/99-dsniff-enable
+endef
+
+define Package/dsniff/postinst
+#!/bin/sh
+[ -n "$$IPKG_INSTROOT" ] && exit 0
+/etc/init.d/dsniff enable >/dev/null 2>&1 || true
+exit 0
 endef
 
 $(eval $(call BuildPackage,dsniff))
